@@ -48,10 +48,42 @@ const activeOutlines = new Map<string, ActiveOutline>();
 const blueprintMap = new Map<Fiber, BlueprintOutline>();
 const blueprintMapKeys = new Set<Fiber>();
 
+/**
+ * Resolves the display name for a fiber, handling nested wrappers like
+ * memo(forwardRef(Component)) where bippy's getDisplayName may return null.
+ *
+ * When React.memo wraps React.forwardRef, the fiber.type structure is:
+ *   fiber.type          -> memo wrapper  (has .type)
+ *   fiber.type.type     -> forwardRef wrapper (has .render)
+ *   fiber.type.type.render -> actual component function
+ */
+const getFiberName = (fiber: Fiber): string | null => {
+  const type = fiber.type;
+
+  if (!type) return null;
+
+  // Standard function component or class component
+  if (typeof type === 'function') {
+    return type.displayName || type.name || null;
+  }
+
+  // memo(forwardRef(Component)): type.type is forwardRef, type.type.render is the component
+  if (type.type && typeof type.type.render === 'function') {
+    return (
+      type.type.render.displayName ||
+      type.type.render.name ||
+      null
+    );
+  }
+
+  // Fallback: use bippy's getDisplayName then displayName on type itself
+  return getDisplayName(fiber) || type.displayName || null;
+};
+
 export const outlineFiber = (fiber: Fiber) => {
   if (!isCompositeFiber(fiber)) return;
   const name =
-    typeof fiber.type === 'string' ? fiber.type : getDisplayName(fiber);
+    typeof fiber.type === 'string' ? fiber.type : getFiberName(fiber);
   if (!name) return;
   const blueprint = blueprintMap.get(fiber);
   const nearestFibers = getNearestHostFibers(fiber);
